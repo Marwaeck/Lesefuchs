@@ -344,41 +344,100 @@ try {
   if (raw) { const d = JSON.parse(raw); db.words = d.words || []; db.updated = d.updated || 0; Object.assign(db.settings, d.settings || {}); }
 } catch (e) { /* privater Modus o. ä. */ }
 const W = window.claude && typeof window.claude.use === "function" ? window.claude : null; // läuft als Claude-Artefakt
-let cloud = null, cloudBusy = false, cloudAgain = false, cloudT;
+// Gemeinsame Datenbank (nur im Claude-Artefakt): ein Dokument je Wort in der Sammlung "woerter".
+// Alle, mit denen die Seite geteilt ist, sehen dieselben Wörter; Änderungen erscheinen sofort bei allen.
+// Einstellungen (Großbuchstaben, Mikrofon …) bleiben pro Gerät.
+let shared = null, readOnly = false;
+let synced = new Map();  // id -> JSON, wie es in der Datenbank steht (oder gleich stehen wird)
+let pending = new Map(); // id -> JSON oder null (löschen), noch zu schreiben
+let writing = false;
 function save() {
   db.updated = Date.now();
-  try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ok, Cloud oder nur Sitzung */ }
-  if (cloud) { clearTimeout(cloudT); cloudT = setTimeout(pushCloud, 700); }
+  try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ok */ }
+  if (shared && !readOnly) queueChanges();
 }
-async function pushCloud() {
-  if (cloudBusy) { cloudAgain = true; return; }
-  cloudBusy = true;
-  try { await cloud.set({ json: JSON.stringify(db), updated: db.updated }); }
-  catch (e) { if (e && e.code === "quota_exceeded") toast("Speicher voll – bitte alte Wörter löschen"); }
-  cloudBusy = false;
-  if (cloudAgain) { cloudAgain = false; pushCloud(); }
+function queueChanges() {
+  const now = new Map(db.words.map((w) => [w.id, JSON.stringify(w)]));
+  for (const [id, j] of now) if (synced.get(id) !== j) { pending.set(id, j); synced.set(id, j); }
+  for (const id of [...synced.keys()]) if (!now.has(id)) { pending.set(id, null); synced.delete(id); }
+  pump();
+}
+async function pump() {
+  if (writing) return;
+  writing = true;
+  while (pending.size) {
+    const [id, j] = pending.entries().next().value;
+    pending.delete(id);
+    try {
+      if (j === null) await shared.doc(id).delete(); else await shared.doc(id).set(JSON.parse(j));
+    } catch (e) {
+      const code = e && e.code;
+      if (code === "unavailable" || code === "resource_exhausted") { // kurz warten, dann weiter
+        if (!pending.has(id)) pending.set(id, j);
+        writing = false; setTimeout(pump, 1500 + Math.random() * 1500); return;
+      }
+      if (code === "not_granted") { setReadOnly(); pending.clear(); break; }
+      if (code === "quota_exceeded") toast("Speicher voll – bitte alte Wörter löschen");
+      else toast("Speichern hat nicht geklappt");
+    }
+  }
+  writing = false;
+}
+function setReadOnly() {
+  readOnly = true;
+  $("s-where").textContent = "Du kannst die gemeinsamen Wörter nur ansehen. Bitte die Person, die die App geteilt hat, dir Bearbeitungsrechte zu geben.";
+  toast("Nur ansehen: Änderungen werden nicht gespeichert");
+}
+function refreshView() {
+  if (!$("v-home").hidden) renderHome();
+  else if (!$("v-words").hidden) renderWords();
 }
 async function initCloud() {
   if (!W) return;
   try {
     const [cdb, user] = await Promise.all([W.use("db"), W.use("user")]);
-    if (!cdb || !user) return;
-    const id = await user.id();
-    if (!id) return;
-    const ref = cdb.doc("data/users/" + id + "/lesefuchs");
-    const snap = await Promise.race([ref.get(), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000))]);
-    const remote = snap.exists ? JSON.parse(snap.data().json || "{}") : null;
-    cloud = ref;
-    $("s-where").textContent = "Die Wörter werden in deinem Konto gespeichert und sind auf allen Geräten da, auf denen du diese Seite öffnest.";
-    if (remote && (remote.updated || 0) >= (db.updated || 0)) {
-      db.words = remote.words || []; Object.assign(db.settings, remote.settings || {});
-      db.updated = remote.updated;
+    if (!cdb) return;
+    // Wörter aus der früheren, privaten Speicherung (Version 1) für die Übernahme merken
+    let old = [];
+    const uidv = user ? await user.id() : null;
+    if (uidv) {
+      try {
+        const snap = await cdb.doc("data/users/" + uidv + "/lesefuchs").get();
+        if (snap.exists) old = JSON.parse(snap.data().json || "{}").words || [];
+      } catch (e) {}
+    }
+    if (user && (await user.can("data.write")) === false) readOnly = true;
+    shared = cdb.collection("woerter");
+    let first = true;
+    const timer = setTimeout(() => { if (first) toast("Gemeinsame Wörter konnten nicht geladen werden"); }, 10000);
+    shared.onSnapshot((snap) => {
+      clearTimeout(timer);
+      if (first) {
+        first = false;
+        $("s-where").textContent = readOnly
+          ? "Du kannst die gemeinsamen Wörter nur ansehen. Bitte die Person, die die App geteilt hat, dir Bearbeitungsrechte zu geben."
+          : "Die Wörter liegen in einer gemeinsamen Datenbank: Alle, mit denen du diese Seite teilst, sehen und üben dieselben Wörter.";
+        const wasShared = db.shared;
+        db.shared = true;
+        if (snap.empty && !readOnly && !wasShared) { // erste Nutzung: bisherige Wörter übernehmen
+          const seen = new Set(db.words.map((w) => norm(w.text)));
+          for (const w of old) if (!seen.has(norm(w.text))) { seen.add(norm(w.text)); db.words.push(w); }
+          if (db.words.length) { save(); refreshView(); return; }
+        }
+      }
+      const words = [];
+      synced = new Map();
+      for (const d of snap.docs) {
+        const w = Object.assign(d.data() || {}, { id: d.id });
+        if (pending.has(d.id)) { const j = pending.get(d.id); if (j) { words.push(JSON.parse(j)); synced.set(d.id, j); } }
+        else { words.push(w); synced.set(d.id, JSON.stringify(w)); }
+      }
+      for (const [id, j] of pending) if (j && !synced.has(id)) { words.push(JSON.parse(j)); synced.set(id, j); }
+      db.words = words;
       try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {}
-      applyTheme();
-      if (!$("v-home").hidden) renderHome();
-      else if (!$("v-words").hidden) renderWords();
-    } else if (db.words.length) pushCloud();
-  } catch (e) { console.warn("Konto-Speicher nicht verfügbar", e); }
+      refreshView();
+    }, (e) => { console.warn("Gemeinsame Wörter:", e); if (e && e.code === "not_granted") toast("Kein Zugriff auf die gemeinsamen Wörter"); });
+  } catch (e) { console.warn("Gemeinsame Datenbank nicht verfügbar", e); }
 }
 
 // Bestätigung im Seitenstil (confirm() ist im Artefakt gesperrt)
