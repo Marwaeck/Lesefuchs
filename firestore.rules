@@ -1,0 +1,38 @@
+rules_version = '2';
+// Lesefuchs: Eine Familie ist familien/<id> mit der Liste "emails" (kleingeschrieben).
+// Nur wer mit einer bestätigten Adresse aus dieser Liste angemeldet ist, sieht und ändert die Wörter.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null && request.auth.token.email_verified == true;
+    }
+    function me() { return request.auth.token.email.lower(); }
+    function member(fid) {
+      return signedIn() && me() in get(/databases/$(database)/documents/familien/$(fid)).data.emails;
+    }
+
+    match /familien/{fid} {
+      allow read: if signedIn() && me() in resource.data.emails;
+      // Neue Familie: nur mit sich selbst als einzigem Mitglied
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['emails', 'created'])
+        && request.resource.data.emails == [me()];
+      // Mitglieder dürfen Adressen hinzufügen/entfernen, sich selbst aber nicht austragen; höchstens 10
+      allow update: if signedIn()
+        && me() in resource.data.emails
+        && me() in request.resource.data.emails
+        && request.resource.data.emails is list
+        && request.resource.data.emails.size() <= 10
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emails']);
+      allow delete: if false;
+
+      match /woerter/{wid} {
+        allow read, delete: if member(fid);
+        allow create, update: if member(fid)
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 60;
+      }
+    }
+  }
+}

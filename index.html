@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lesefuchs">
 <title>Lesefuchs</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Andika: Schrift für Leseanfänger (eindeutige a, l, I) -->
@@ -192,6 +195,10 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
       <div class="stat"><b id="st-wv">0</b><span>Wiedervorlage 👎</span></div>
     </div>
     <button class="btn primary bigstart" id="btn-start">▶️ Lesen üben</button>
+    <div class="card row" id="fam-banner" hidden>
+      <span class="grow">👪 Mit der Familie teilen: anmelden, damit alle dieselben Wörter haben.</span>
+      <button class="btn small primary" id="fam-banner-btn">Anmelden</button>
+    </div>
     <div class="card" id="list-pick-card" hidden>
       <label class="field" for="list-pick" style="margin-top:0">Welche Wörter?</label>
       <select id="list-pick"></select>
@@ -311,6 +318,21 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
       <label class="set"><span>Darstellung</span>
         <select id="s-theme"><option value="">automatisch</option><option value="light">hell</option><option value="dark">dunkel</option></select></label>
     </div>
+    <div class="card" id="fam-card" hidden>
+      <b>👪 Familie</b>
+      <div id="fam-out">
+        <p class="muted" style="font-size:15px">Melde dich mit Google an, damit ihr als Eltern dieselben Wörter und denselben Lernstand habt – auf allen Geräten.</p>
+        <button class="btn primary" id="fam-login">Mit Google anmelden</button>
+      </div>
+      <div id="fam-in" hidden>
+        <p class="muted" style="font-size:15px">Angemeldet als <b id="fam-me"></b>. Diese Google-Adressen gehören zur Familie und sehen dieselben Wörter:</p>
+        <ul class="wl" id="fam-list"></ul>
+        <label class="field" for="fam-email">Weitere Person einladen (ihre Google-Adresse)</label>
+        <div class="row"><input type="text" id="fam-email" inputmode="email" autocomplete="email" placeholder="name@gmail.com" class="grow" style="width:auto"><button class="btn small" id="fam-add">Hinzufügen</button></div>
+        <p class="muted" style="font-size:15px">Danach öffnet die Person diese Seite und meldet sich mit genau dieser Adresse an.</p>
+        <button class="btn small" id="fam-logout">Abmelden</button>
+      </div>
+    </div>
     <div class="card">
       <b>Daten</b>
       <p class="muted" style="font-size:15px" id="s-where">Die Wörter werden nur auf diesem Gerät gespeichert.</p>
@@ -332,6 +354,7 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
   </div>
 </div>
 
+<script src="firebase-config.js"></script>
 <script>
 "use strict";
 // ---------- Speicher ----------
@@ -347,7 +370,7 @@ const W = window.claude && typeof window.claude.use === "function" ? window.clau
 // Gemeinsame Datenbank (nur im Claude-Artefakt): ein Dokument je Wort in der Sammlung "woerter".
 // Alle, mit denen die Seite geteilt ist, sehen dieselben Wörter; Änderungen erscheinen sofort bei allen.
 // Einstellungen (Großbuchstaben, Mikrofon …) bleiben pro Gerät.
-let shared = null, readOnly = false;
+let shared = null, readOnly = false, unsubShared = null;
 let synced = new Map();  // id -> JSON, wie es in der Datenbank steht (oder gleich stehen wird)
 let pending = new Map(); // id -> JSON oder null (löschen), noch zu schreiben
 let writing = false;
@@ -363,9 +386,9 @@ function queueChanges() {
   pump();
 }
 async function pump() {
-  if (writing) return;
+  if (writing || !shared) return;
   writing = true;
-  while (pending.size) {
+  while (pending.size && shared) {
     const [id, j] = pending.entries().next().value;
     pending.delete(id);
     try {
@@ -383,61 +406,197 @@ async function pump() {
   }
   writing = false;
 }
+const RO_TEXT = "Du kannst die gemeinsamen Wörter nur ansehen. Bitte die Person, die die App geteilt hat, dir Bearbeitungsrechte zu geben.";
 function setReadOnly() {
+  if (readOnly) return;
   readOnly = true;
-  $("s-where").textContent = "Du kannst die gemeinsamen Wörter nur ansehen. Bitte die Person, die die App geteilt hat, dir Bearbeitungsrechte zu geben.";
+  $("s-where").textContent = RO_TEXT;
   toast("Nur ansehen: Änderungen werden nicht gespeichert");
 }
 function refreshView() {
   if (!$("v-home").hidden) renderHome();
   else if (!$("v-words").hidden) renderWords();
 }
+// Verbindet die Wortliste mit einer gemeinsamen Sammlung.
+// coll: { doc(id) -> {set, delete}, onSnapshot(next, err) -> unsubscribe }, Schnappschuss: {docs:[{id, data()}], empty, fromCache}
+// key: Name der Sammlung; nur beim allerersten Verbinden damit werden die Wörter dieses Geräts übernommen.
+function connectShared(coll, { key, ro = false, old = [], where }) {
+  disconnectShared();
+  shared = coll; readOnly = ro; synced = new Map(); pending = new Map();
+  let first = true;
+  const timer = setTimeout(() => { if (first) toast("Gemeinsame Wörter konnten noch nicht geladen werden"); }, 10000);
+  unsubShared = coll.onSnapshot((snap) => {
+    if (coll !== shared) return;
+    if (first) {
+      if (snap.fromCache && snap.empty) return; // auf die Antwort des Servers warten
+      first = false; clearTimeout(timer);
+      $("s-where").textContent = readOnly ? RO_TEXT : where;
+      const known = db.syncedWith === key || (key === "claude" && db.shared);
+      db.syncedWith = key;
+      if (snap.empty && !readOnly && !known) { // erste Nutzung: Wörter dieses Geräts übernehmen
+        const seen = new Set(db.words.map((w) => norm(w.text)));
+        for (const w of old) if (!seen.has(norm(w.text))) { seen.add(norm(w.text)); db.words.push(w); }
+        if (db.words.length) { save(); refreshView(); return; }
+      }
+    }
+    const words = [];
+    synced = new Map();
+    for (const d of snap.docs) {
+      const w = Object.assign(d.data() || {}, { id: d.id });
+      if (pending.has(d.id)) { const j = pending.get(d.id); if (j) { words.push(JSON.parse(j)); synced.set(d.id, j); } }
+      else { words.push(w); synced.set(d.id, JSON.stringify(w)); }
+    }
+    for (const [id, j] of pending) if (j && !synced.has(id)) { words.push(JSON.parse(j)); synced.set(id, j); }
+    db.words = words;
+    try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {}
+    refreshView();
+  }, (e) => {
+    console.warn("Gemeinsame Wörter:", e);
+    clearTimeout(timer);
+    if (e && e.code === "not_granted") toast("Kein Zugriff auf die gemeinsamen Wörter");
+  });
+}
+function disconnectShared() {
+  if (unsubShared) { try { unsubShared(); } catch (e) {} }
+  unsubShared = null; shared = null; pending = new Map(); synced = new Map(); readOnly = false;
+  $("s-where").textContent = "Die Wörter werden nur auf diesem Gerät gespeichert.";
+}
+
+// ----- Anbindung 1: als Claude-Artefakt (Datenbank der Seite, Sammlung "woerter")
 async function initCloud() {
   if (!W) return;
   try {
     const [cdb, user] = await Promise.all([W.use("db"), W.use("user")]);
     if (!cdb) return;
-    // Wörter aus der früheren, privaten Speicherung (Version 1) für die Übernahme merken
     let old = [];
     const uidv = user ? await user.id() : null;
-    if (uidv) {
+    if (uidv) { // Wörter aus der früheren, privaten Speicherung (Version 1)
       try {
         const snap = await cdb.doc("data/users/" + uidv + "/lesefuchs").get();
         if (snap.exists) old = JSON.parse(snap.data().json || "{}").words || [];
       } catch (e) {}
     }
-    if (user && (await user.can("data.write")) === false) readOnly = true;
-    shared = cdb.collection("woerter");
-    let first = true;
-    const timer = setTimeout(() => { if (first) toast("Gemeinsame Wörter konnten nicht geladen werden"); }, 10000);
-    shared.onSnapshot((snap) => {
-      clearTimeout(timer);
-      if (first) {
-        first = false;
-        $("s-where").textContent = readOnly
-          ? "Du kannst die gemeinsamen Wörter nur ansehen. Bitte die Person, die die App geteilt hat, dir Bearbeitungsrechte zu geben."
-          : "Die Wörter liegen in einer gemeinsamen Datenbank: Alle, mit denen du diese Seite teilst, sehen und üben dieselben Wörter.";
-        const wasShared = db.shared;
-        db.shared = true;
-        if (snap.empty && !readOnly && !wasShared) { // erste Nutzung: bisherige Wörter übernehmen
-          const seen = new Set(db.words.map((w) => norm(w.text)));
-          for (const w of old) if (!seen.has(norm(w.text))) { seen.add(norm(w.text)); db.words.push(w); }
-          if (db.words.length) { save(); refreshView(); return; }
-        }
-      }
-      const words = [];
-      synced = new Map();
-      for (const d of snap.docs) {
-        const w = Object.assign(d.data() || {}, { id: d.id });
-        if (pending.has(d.id)) { const j = pending.get(d.id); if (j) { words.push(JSON.parse(j)); synced.set(d.id, j); } }
-        else { words.push(w); synced.set(d.id, JSON.stringify(w)); }
-      }
-      for (const [id, j] of pending) if (j && !synced.has(id)) { words.push(JSON.parse(j)); synced.set(id, j); }
-      db.words = words;
-      try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {}
-      refreshView();
-    }, (e) => { console.warn("Gemeinsame Wörter:", e); if (e && e.code === "not_granted") toast("Kein Zugriff auf die gemeinsamen Wörter"); });
+    const ro = !!user && (await user.can("data.write")) === false;
+    const col = cdb.collection("woerter");
+    connectShared({
+      doc: (id) => col.doc(id),
+      onSnapshot: (next, err) => col.onSnapshot((s) => next({ docs: s.docs, empty: s.empty, fromCache: !!(s.metadata && s.metadata.fromCache) }), err),
+    }, { key: "claude", ro, old, where: "Die Wörter liegen in einer gemeinsamen Datenbank: Alle, mit denen du diese Seite teilst, sehen und üben dieselben Wörter." });
   } catch (e) { console.warn("Gemeinsame Datenbank nicht verfügbar", e); }
+}
+
+// ----- Anbindung 2: Firebase (Google-Anmeldung + Firestore), z. B. auf Cloudflare Pages
+// Eine Familie = Dokument familien/<id> mit der Liste "emails"; die Wörter liegen in familien/<id>/woerter.
+// Wer mit einer eingetragenen Google-Adresse angemeldet ist, darf lesen und schreiben (siehe firestore.rules).
+const FB_VERSION = "10.14.1";
+let FB = null; // { A, F, auth, fs, user, fam, emails, unsubFam }
+async function initFirebase() {
+  const cfg = window.FIREBASE_CONFIG;
+  if (W || !cfg || !cfg.apiKey) return;
+  try {
+    const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+    const [{ initializeApp }, A, F] = await Promise.all([import(base + "firebase-app.js"), import(base + "firebase-auth.js"), import(base + "firebase-firestore.js")]);
+    const app = initializeApp(cfg);
+    let fs;
+    try { fs = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) }); }
+    catch (e) { fs = F.getFirestore(app); }
+    FB = { A, F, auth: A.getAuth(app), fs, user: null, fam: null, emails: [], unsubFam: null };
+    FB.auth.languageCode = "de";
+    A.getRedirectResult(FB.auth).catch((e) => loginError(e));
+    A.onAuthStateChanged(FB.auth, (u) => {
+      FB.user = u;
+      if (u) openFamily().catch((e) => { console.error(e); toast("Familie konnte nicht geladen werden"); });
+      else closeFamily();
+      renderFamily(); renderHome();
+    });
+    renderFamily(); renderHome();
+  } catch (e) { console.warn("Firebase nicht verfügbar", e); }
+}
+const myEmail = () => (FB && FB.user && FB.user.email || "").toLowerCase();
+function loginError(e) {
+  if (!e || e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return;
+  if (e.code === "auth/unauthorized-domain") return toast("Diese Adresse ist in Firebase noch nicht freigegeben (Authentication → Einstellungen → Autorisierte Domains)");
+  toast("Anmeldung hat nicht geklappt");
+  console.error(e);
+}
+async function login() {
+  const { A, auth } = FB;
+  const prov = new A.GoogleAuthProvider();
+  prov.setCustomParameters({ prompt: "select_account" });
+  try { await A.signInWithPopup(auth, prov); }
+  catch (e) {
+    if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) return A.signInWithRedirect(auth, prov);
+    loginError(e);
+  }
+}
+async function openFamily() {
+  const { F, fs } = FB, email = myEmail();
+  if (!email) return toast("Dieses Konto hat keine E-Mail-Adresse");
+  const fams = await F.getDocs(F.query(F.collection(fs, "familien"), F.where("emails", "array-contains", email)));
+  let ref;
+  if (fams.empty) {
+    ref = F.doc(F.collection(fs, "familien"));
+    await F.setDoc(ref, { emails: [email], created: Date.now() });
+  } else {
+    // Gibt es mehrere, nimm die, in die man eingeladen wurde (mehr Mitglieder), sonst die älteste.
+    const list = fams.docs.map((d) => ({ ref: d.ref, n: (d.data().emails || []).length, t: d.data().created || 0 }));
+    list.sort((a, b) => b.n - a.n || a.t - b.t);
+    ref = list[0].ref;
+  }
+  if (!FB.user) return;
+  FB.fam = ref;
+  FB.unsubFam = F.onSnapshot(ref, (s) => { FB.emails = (s.data() && s.data().emails) || []; renderFamily(); }, () => {});
+  const col = F.collection(ref, "woerter");
+  connectShared({
+    doc: (id) => ({
+      // Firestore speichert sofort lokal und schickt im Hintergrund; nicht auf den Server warten (offline sonst blockiert)
+      set: (d) => { F.setDoc(F.doc(col, id), d).catch(fbWriteError); return Promise.resolve(); },
+      delete: () => { F.deleteDoc(F.doc(col, id)).catch(fbWriteError); return Promise.resolve(); },
+    }),
+    onSnapshot: (next, err) => F.onSnapshot(col, { includeMetadataChanges: true },
+      (s) => next({ docs: s.docs, empty: s.empty, fromCache: s.metadata.fromCache }),
+      (e) => err({ code: e.code === "permission-denied" ? "not_granted" : e.code, message: e.message })),
+  }, { key: "fb:" + ref.id, old: [], where: "Die Wörter liegen in eurer Familien-Datenbank und sind bei allen eingetragenen Personen gleich." });
+}
+function fbWriteError(e) {
+  console.warn(e);
+  if (e && e.code === "permission-denied") toast("Keine Berechtigung – bist du noch in der Familie eingetragen?");
+}
+function closeFamily() {
+  if (FB && FB.unsubFam) FB.unsubFam();
+  if (FB) { FB.fam = null; FB.emails = []; FB.unsubFam = null; }
+  disconnectShared();
+}
+function renderFamily() {
+  const on = !!FB;
+  $("fam-card").hidden = !on;
+  if (!on) return;
+  const u = FB.user;
+  $("fam-out").hidden = !!u; $("fam-in").hidden = !u;
+  if (!u) return;
+  $("fam-me").textContent = u.email || "";
+  const me = myEmail();
+  $("fam-list").innerHTML = FB.emails.map((e) => `<li><span class="w" style="font-size:18px">${esc(e)}${e === me ? " (du)" : ""}</span>${e === me ? "" : `<button class="del" data-rm="${esc(e)}" aria-label="${esc(e)} entfernen">🗑️</button>`}</li>`).join("");
+}
+function bindFamily() {
+$("fam-login").addEventListener("click", login);
+$("fam-banner-btn").addEventListener("click", login);
+$("fam-logout").addEventListener("click", async () => {
+  if (!(await ask("Abmelden? Die Wörter bleiben in der Familien-Datenbank.", "Abmelden"))) return;
+  FB.A.signOut(FB.auth);
+});
+$("fam-add").addEventListener("click", async () => {
+  const e = $("fam-email").value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return toast("Bitte eine gültige E-Mail-Adresse eingeben");
+  if (FB.emails.includes(e)) return toast("Diese Adresse ist schon eingetragen");
+  try { await FB.F.updateDoc(FB.fam, { emails: FB.F.arrayUnion(e) }); $("fam-email").value = ""; toast("Eingetragen ✅ – jetzt mit dieser Google-Adresse anmelden"); }
+  catch (err) { console.warn(err); toast("Eintragen hat nicht geklappt"); }
+});
+$("fam-list").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-rm]"); if (!b) return;
+  if (!(await ask(`${b.dataset.rm} aus der Familie entfernen? Diese Person sieht die Wörter dann nicht mehr.`, "Entfernen"))) return;
+  try { await FB.F.updateDoc(FB.fam, { emails: FB.F.arrayRemove(b.dataset.rm) }); } catch (err) { toast("Entfernen hat nicht geklappt"); }
+});
 }
 
 // Bestätigung im Seitenstil (confirm() ist im Artefakt gesperrt)
@@ -487,6 +646,7 @@ function renderHome() {
   const names = listNames();
   $("list-pick-card").hidden = names.length < 2;
   $("list-pick").innerHTML = `<option value="">Alle Listen</option>` + names.map((n) => `<option ${n === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
+  $("fam-banner").hidden = !(FB && !FB.user);
   const ws = pool();
   $("st-total").textContent = ws.length;
   $("st-due").textContent = ws.filter(isDue).length;
@@ -959,7 +1119,9 @@ $("s-clear").addEventListener("click", async () => {
 });
 
 go("home");
+bindFamily();
 initCloud();
+initFirebase();
 if (W) {
   W.use("tts").then((t) => { tts = t; });
   W.use("dictation").then((d) => { if (d) setupDictation(d); });
