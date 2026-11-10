@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffb703">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lesefuchs">
+<title>Lesefuchs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Andika: Schrift für Leseanfänger (eindeutige a, l, I) -->
+<link href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fff8e7;
+  --card: #ffffff;
+  --ink: #2b2d42;
+  --muted: #6c6f85;
+  --line: #f0e3c4;
+  --accent: #ffb703;
+  --accent-ink: #5a3d00;
+  --blue: #3a86ff;
+  --good: #2a9d4b;
+  --good-bg: #e3f6e8;
+  --bad: #e5484d;
+  --bad-bg: #fde8e8;
+  --shadow: 0 4px 0 rgba(0,0,0,.08), 0 8px 24px rgba(90,61,0,.08);
+  --radius: 22px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1d1b16; --card: #2a2720; --ink: #f4efe2; --muted: #b5ad99; --line: #3d382c;
+    --good-bg: #1f3a27; --bad-bg: #44201f; --shadow: 0 4px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1d1b16; --card: #2a2720; --ink: #f4efe2; --muted: #b5ad99; --line: #3d382c;
+  --good-bg: #1f3a27; --bad-bg: #44201f; --shadow: 0 4px 0 rgba(0,0,0,.3);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: "Andika", "Comic Sans MS", system-ui, sans-serif;
+  font-size: 18px; line-height: 1.4;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+header.top h1 { font-size: 26px; margin: 0; flex: 1; }
+.logo { font-size: 36px; }
+.iconbtn {
+  border: 0; background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
+  width: 48px; height: 48px; font-size: 22px; cursor: pointer;
+}
+.btn {
+  border: 0; border-radius: 18px; padding: 14px 20px; cursor: pointer;
+  background: var(--card); box-shadow: var(--shadow); font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  transition: transform .08s;
+}
+.btn:active { transform: translateY(2px); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.blue { background: var(--blue); color: #fff; }
+.btn.small { padding: 8px 14px; font-size: 16px; border-radius: 14px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.grow { flex: 1; }
+[hidden] { display: none !important; }
+
+/* Start */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 8px; text-align: center; }
+.stat b { display: block; font-size: 32px; line-height: 1.1; }
+.stat span { font-size: 14px; color: var(--muted); }
+.bigstart { width: 100%; font-size: 26px; padding: 22px; border-radius: 26px; margin-bottom: 16px; }
+.menu { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.menu .btn { padding: 20px 12px; flex-direction: column; font-size: 17px; }
+.menu .btn .ic { font-size: 34px; }
+
+/* Üben */
+.progress { height: 14px; background: var(--line); border-radius: 99px; overflow: hidden; flex: 1; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s; }
+.wordcard {
+  position: relative; background: var(--card); border-radius: 30px; box-shadow: var(--shadow);
+  min-height: 46vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px 16px; margin: 16px 0; text-align: center; overflow: hidden;
+  transition: background .25s;
+}
+.wordcard.good { background: var(--good-bg); }
+.wordcard.bad { background: var(--bad-bg); }
+.theword { font-size: clamp(44px, 14vw, 110px); font-weight: 700; letter-spacing: .02em; word-break: break-word; line-height: 1.15; }
+.theword.upper { text-transform: uppercase; }
+.badge-wv { position: absolute; top: 14px; left: 14px; font-size: 14px; background: var(--bad-bg); color: var(--bad); padding: 4px 10px; border-radius: 99px; font-weight: 700; }
+.thumb {
+  position: absolute; right: 18px; bottom: 10px; font-size: 80px;
+  animation: pop .45s cubic-bezier(.2,1.6,.4,1);
+}
+@keyframes pop { from { transform: scale(0) rotate(-30deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+.judge { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.judge .btn { font-size: 54px; padding: 18px 0; border-radius: 26px; }
+.judge .yes { background: var(--good); }
+.judge .no { background: var(--bad); }
+.judge .lbl { display: block; font-size: 16px; color: #fff; }
+.hint { text-align: center; margin: 12px 0 0; min-height: 1.4em; }
+.mic { width: 100%; margin-bottom: 14px; font-size: 22px; padding: 18px; }
+.mic.listening { background: var(--bad); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .7; } }
+
+/* Ergebnis */
+.result { text-align: center; }
+.result .big { font-size: 72px; margin: 8px 0; }
+.result-list { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 99px; background: var(--bg); border: 2px solid var(--line); font-size: 18px; }
+.chip.good { background: var(--good-bg); border-color: transparent; }
+.chip.bad { background: var(--bad-bg); border-color: transparent; }
+
+/* Import */
+.drop {
+  border: 3px dashed var(--line); border-radius: var(--radius); padding: 28px 16px; text-align: center;
+  cursor: pointer; background: var(--card);
+}
+.drop.over { border-color: var(--accent); }
+.drop .ic { font-size: 48px; }
+.status { margin-top: 12px; }
+.bar { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .2s; }
+.pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.pick button { border: 2px solid var(--line); background: var(--bg); border-radius: 99px; padding: 6px 14px; cursor: pointer; font-size: 18px; }
+.pick button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.pick button.known { opacity: .55; }
+textarea, input[type=text], select {
+  width: 100%; border: 2px solid var(--line); border-radius: 14px; padding: 12px; background: var(--bg);
+}
+textarea { min-height: 90px; resize: vertical; }
+label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
+
+/* Wörter */
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tabs button { border: 0; background: var(--card); box-shadow: var(--shadow); border-radius: 99px; padding: 8px 14px; cursor: pointer; }
+.tabs button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.wl { list-style: none; margin: 0; padding: 0; }
+.wl li { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 2px solid var(--line); }
+.wl li:last-child { border-bottom: 0; }
+.wl .w { flex: 1; font-size: 22px; font-weight: 700; min-width: 0; overflow-wrap: break-word; hyphens: auto; }
+.wl .s { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.wl .del { border: 0; background: none; font-size: 20px; cursor: pointer; padding: 4px; }
+.stars { letter-spacing: -2px; }
+.empty { text-align: center; padding: 24px; color: var(--muted); }
+
+/* Einstellungen */
+.set { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 2px solid var(--line); }
+.set:last-child { border-bottom: 0; }
+.set > span { flex: 1; }
+.set input[type=checkbox] { width: 28px; height: 28px; accent-color: var(--accent); }
+.set select { width: auto; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 12px 20px; border-radius: 16px; z-index: 10; max-width: calc(100% - 32px); text-align: center;
+}
+@media (max-width: 420px) {
+  .stat b { font-size: 26px; }
+  .judge .btn { font-size: 44px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== Start ===== -->
+  <section id="v-home">
+    <header class="top">
+      <span class="logo">🦊</span>
+      <h1>Lesefuchs</h1>
+      <button class="iconbtn" data-go="settings" aria-label="Einstellungen">⚙️</button>
+    </header>
+    <div class="stats">
+      <div class="stat"><b id="st-total">0</b><span>Wörter</span></div>
+      <div class="stat"><b id="st-due">0</b><span>heute dran</span></div>
+      <div class="stat"><b id="st-wv">0</b><span>Wiedervorlage 👎</span></div>
+    </div>
+    <button class="btn primary bigstart" id="btn-start">▶️ Lesen üben</button>
+    <div class="card" id="list-pick-card" hidden>
+      <label class="field" for="list-pick" style="margin-top:0">Welche Wörter?</label>
+      <select id="list-pick"></select>
+    </div>
+    <div class="menu">
+      <button class="btn" data-go="import"><span class="ic">📷</span>Wörter einlesen</button>
+      <button class="btn" data-go="words"><span class="ic">📚</span>Meine Wörter</button>
+    </div>
+  </section>
+
+  <!-- ===== Üben ===== -->
+  <section id="v-practice" hidden>
+    <header class="top">
+      <button class="iconbtn" id="btn-quit" aria-label="Beenden">✖️</button>
+      <div class="progress"><i id="prog"></i></div>
+      <span id="prog-txt" class="muted"></span>
+    </header>
+    <div class="wordcard" id="wordcard">
+      <span class="badge-wv" id="badge-wv" hidden>Nochmal!</span>
+      <div class="theword" id="theword"></div>
+      <div class="thumb" id="thumb" hidden></div>
+    </div>
+    <button class="btn blue mic" id="btn-mic" hidden>🎤 Jetzt vorlesen</button>
+    <div class="judge" id="judge">
+      <button class="btn yes" id="btn-yes" aria-label="Richtig gelesen">👍<span class="lbl">richtig</span></button>
+      <button class="btn no" id="btn-no" aria-label="Nicht richtig gelesen">👎<span class="lbl">nochmal üben</span></button>
+    </div>
+    <p class="hint muted" id="hint"></p>
+    <div class="row" id="after" hidden style="justify-content:center;margin-top:8px">
+      <button class="btn small" id="btn-listen">🔊 Anhören</button>
+      <button class="btn small" id="btn-undo">↩️ Korrigieren</button>
+      <button class="btn primary" id="btn-next" style="flex-basis:100%;font-size:24px;padding:18px">Weiter ➜</button>
+    </div>
+  </section>
+
+  <!-- ===== Ergebnis ===== -->
+  <section id="v-result" hidden>
+    <div class="card result">
+      <div class="big" id="res-emoji">🎉</div>
+      <h2 id="res-title" style="margin:0">Super gemacht!</h2>
+      <p id="res-sub" class="muted"></p>
+      <div class="result-list" id="res-list"></div>
+      <div class="row" style="justify-content:center">
+        <button class="btn" data-go="home">🏠 Start</button>
+        <button class="btn primary" id="btn-again">🔁 Nochmal</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Import ===== -->
+  <section id="v-import" hidden>
+    <header class="top">
+      <button class="iconbtn" data-go="home" aria-label="Zurück">⬅️</button>
+      <h1>Wörter einlesen</h1>
+    </header>
+    <div class="drop" id="drop" tabindex="0" role="button">
+      <div class="ic">📄📷</div>
+      <b>PDF oder Bild auswählen</b>
+      <div class="muted">Foto vom Arbeitsblatt, Scan oder PDF – oder hierher ziehen</div>
+      <input type="file" id="file" accept="image/*,application/pdf" hidden>
+    </div>
+    <div class="status" id="imp-status" hidden>
+      <span id="imp-msg"></span>
+      <div class="bar"><i id="imp-bar"></i></div>
+    </div>
+
+    <div class="card" id="imp-result" hidden style="margin-top:16px">
+      <div class="row">
+        <b class="grow">Gefundene Wörter <span id="imp-count" class="muted"></span></b>
+        <button class="btn small" id="imp-all">Alle</button>
+        <button class="btn small" id="imp-none">Keine</button>
+      </div>
+      <p class="muted" style="margin:6px 0 0;font-size:15px">Tippe Wörter an, um sie aus- oder abzuwählen. Blasse Wörter sind schon in deiner Sammlung.</p>
+      <div class="pick" id="imp-pick"></div>
+    </div>
+
+    <div class="card">
+      <label class="field" for="manual" style="margin-top:0">Wörter selbst eintippen</label>
+      <textarea id="manual" placeholder="z. B. Haus, Maus, Oma, Auto …"></textarea>
+      <label class="field" for="listname">In Liste</label>
+      <input type="text" id="listname" list="listnames" placeholder="z. B. Woche 12">
+      <datalist id="listnames"></datalist>
+      <div class="row" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn primary" id="imp-save">✅ Wörter übernehmen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Wörter ===== -->
+  <section id="v-words" hidden>
+    <header class="top">
+      <button class="iconbtn" data-go="home" aria-label="Zurück">⬅️</button>
+      <h1>Meine Wörter</h1>
+    </header>
+    <div class="tabs" id="w-tabs">
+      <button data-f="all" class="on">Alle</button>
+      <button data-f="wv">👎 Wiedervorlage</button>
+      <button data-f="new">🆕 Neu</button>
+      <button data-f="good">⭐ Gekonnt</button>
+    </div>
+    <select id="w-list" style="margin-bottom:12px"></select>
+    <div class="card"><ul class="wl" id="w-ul"></ul></div>
+  </section>
+
+  <!-- ===== Einstellungen ===== -->
+  <section id="v-settings" hidden>
+    <header class="top">
+      <button class="iconbtn" data-go="home" aria-label="Zurück">⬅️</button>
+      <h1>Einstellungen</h1>
+    </header>
+    <div class="card">
+      <label class="set"><span>Wörter pro Runde</span>
+        <select id="s-len"><option>5</option><option>10</option><option>15</option><option>20</option><option>30</option></select></label>
+      <label class="set"><span>GROSSBUCHSTABEN anzeigen</span><input type="checkbox" id="s-upper"></label>
+      <label class="set"><span>Nach 👎 das Wort vorsprechen</span><input type="checkbox" id="s-say"></label>
+      <label class="set"><span>Mikrofon: App hört beim Vorlesen zu<br><small class="muted" id="s-mic-note">Erkennt das Wort selbst und vergibt 👍 oder 👎. Kann jederzeit korrigiert werden.</small></span><input type="checkbox" id="s-mic"></label>
+      <label class="set"><span>Darstellung</span>
+        <select id="s-theme"><option value="">automatisch</option><option value="light">hell</option><option value="dark">dunkel</option></select></label>
+    </div>
+    <div class="card">
+      <b>Daten</b>
+      <p class="muted" style="font-size:15px">Die Wörter werden nur auf diesem Gerät gespeichert.</p>
+      <div class="row">
+        <button class="btn small" id="s-export">💾 Sicherung speichern</button>
+        <button class="btn small" id="s-import">📂 Sicherung laden</button>
+        <input type="file" id="s-file" accept="application/json,.json" hidden>
+        <button class="btn small" id="s-reset">🔄 Fortschritt zurücksetzen</button>
+        <button class="btn small" id="s-clear">🗑️ Alle Wörter löschen</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+// ---------- Speicher ----------
+const KEY = "lesefuchs.v1";
+const INTERVAL = [0, 1, 2, 4, 8, 16]; // Tage bis zur nächsten Abfrage je Fach (Leitner)
+const MAXBOX = 5;
+let db = { words: [], settings: { len: 10, upper: false, say: true, mic: false, theme: "" } };
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) { const d = JSON.parse(raw); db.words = d.words || []; Object.assign(db.settings, d.settings || {}); }
+} catch (e) { /* privater Modus o. ä. */ }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast("Speichern nicht möglich"); } }
+
+const today = () => Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = (s) => s.toLocaleLowerCase("de").normalize("NFC").replace(/[^\p{L}\p{N}]/gu, "");
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const isDue = (w) => w.wv || w.due <= today();
+
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2600); }
+
+function applyTheme() {
+  if (db.settings.theme) document.documentElement.setAttribute("data-theme", db.settings.theme);
+  else document.documentElement.removeAttribute("data-theme");
+}
+applyTheme();
+
+// ---------- Navigation ----------
+const views = ["home", "practice", "result", "import", "words", "settings"];
+function go(v) {
+  if (recog) { try { recog.abort(); } catch (e) {} }
+  views.forEach((n) => ($("v-" + n).hidden = n !== v));
+  if (v === "home") renderHome();
+  if (v === "words") renderWords();
+  if (v === "import") renderImport();
+  if (v === "settings") renderSettings();
+  window.scrollTo(0, 0);
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (b) go(b.dataset.go); });
+
+function listNames() { return [...new Set(db.words.map((w) => w.list).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de")); }
+
+// ---------- Start ----------
+function renderHome() {
+  const sel = $("list-pick").value;
+  const names = listNames();
+  $("list-pick-card").hidden = names.length < 2;
+  $("list-pick").innerHTML = `<option value="">Alle Listen</option>` + names.map((n) => `<option ${n === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
+  const ws = pool();
+  $("st-total").textContent = ws.length;
+  $("st-due").textContent = ws.filter(isDue).length;
+  $("st-wv").textContent = ws.filter((w) => w.wv).length;
+  const btn = $("btn-start");
+  btn.disabled = !ws.length;
+  btn.textContent = !ws.length ? "Erst Wörter einlesen 📷" : ws.some(isDue) ? "▶️ Lesen üben" : "▶️ Extra-Runde üben";
+}
+function pool() { const l = $("list-pick").value; return db.words.filter((w) => !l || w.list === l); }
+$("list-pick").addEventListener("change", renderHome);
+
+// ---------- Üben ----------
+let S = null; // laufende Runde
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function startSession() {
+  const ws = pool();
+  if (!ws.length) return;
+  const n = +db.settings.len || 10;
+  // Reihenfolge: Wiedervorlage zuerst, dann fällige, dann neue. Ist nichts fällig: freie Runde.
+  let due = ws.filter(isDue);
+  const wv = shuffle(due.filter((w) => w.wv));
+  const old = shuffle(due.filter((w) => !w.wv && w.box > 0)).sort((a, b) => a.due - b.due);
+  const neu = shuffle(due.filter((w) => !w.wv && w.box === 0));
+  let pick = [...wv, ...old, ...neu].slice(0, n);
+  if (!pick.length) pick = shuffle([...ws]).sort((a, b) => a.box - b.box || (a.seen || 0) - (b.seen || 0)).slice(0, n);
+  else pick = [...pick.slice(0, wv.length), ...shuffle(pick.slice(wv.length))]; // neue und fällige gemischt
+  S = { queue: pick.map((w) => w.id), pos: 0, first: {}, retries: {}, answered: false, last: null, total: pick.length };
+  go("practice");
+  showWord();
+}
+$("btn-start").addEventListener("click", startSession);
+$("btn-again").addEventListener("click", startSession);
+$("btn-quit").addEventListener("click", () => (Object.keys(S.first).length ? finish() : go("home")));
+
+function cur() { return db.words.find((w) => w.id === S.queue[S.pos]); }
+
+function showWord() {
+  const w = cur();
+  if (!w) return finish();
+  S.answered = false; S.last = null;
+  $("theword").textContent = w.text;
+  $("theword").classList.toggle("upper", !!db.settings.upper);
+  $("wordcard").className = "wordcard";
+  $("thumb").hidden = true;
+  $("badge-wv").hidden = !(S.retries[w.id] || w.wv);
+  $("badge-wv").textContent = S.retries[w.id] ? "Nochmal!" : "Wiedervorlage";
+  $("judge").hidden = false;
+  $("after").hidden = true;
+  const micOn = db.settings.mic && SR;
+  $("btn-mic").hidden = !micOn;
+  $("btn-mic").classList.remove("listening");
+  $("btn-mic").textContent = "🎤 Jetzt vorlesen";
+  $("hint").textContent = micOn ? "Tippe aufs Mikrofon und lies das Wort laut vor." : "Lies das Wort laut vor!";
+  const done = Object.keys(S.first).length;
+  $("prog").style.width = (done / S.total) * 100 + "%";
+  $("prog-txt").textContent = `${Math.min(done + 1, S.total)}/${S.total}`;
+}
+
+function snapshot(w) { return { box: w.box, due: w.due, wv: w.wv, right: w.right, wrong: w.wrong, last: w.last, seen: w.seen }; }
+
+function judge(ok, heard) {
+  if (S.answered) return;
+  const w = cur();
+  S.answered = true;
+  const qlen = S.queue.length;
+  S.last = { id: w.id, ok, before: snapshot(w), hadFirst: w.id in S.first, retries: S.retries[w.id] || 0, qlen };
+  if (!(w.id in S.first)) S.first[w.id] = ok;
+  w.seen = Date.now();
+  w.last = ok ? "up" : "down";
+  if (ok) {
+    w.right = (w.right || 0) + 1;
+    if (w.wv || S.retries[w.id]) { w.wv = false; w.box = Math.max(1, w.box); w.due = today() + 1; }
+    else { w.box = Math.min(MAXBOX, w.box + 1); w.due = today() + INTERVAL[w.box]; }
+  } else {
+    w.wrong = (w.wrong || 0) + 1;
+    w.box = 1; w.wv = true; w.due = today();
+    // Wiedervorlage in dieser Runde: 3 Wörter später nochmal (höchstens 2-mal)
+    const r = S.retries[w.id] || 0;
+    if (r < 2) { S.retries[w.id] = r + 1; S.queue.splice(Math.min(S.pos + 4, S.queue.length), 0, w.id); }
+  }
+  save();
+  $("wordcard").classList.add(ok ? "good" : "bad");
+  $("thumb").textContent = ok ? "👍" : "👎";
+  $("thumb").hidden = false;
+  $("judge").hidden = true;
+  $("btn-mic").hidden = true;
+  $("after").hidden = false;
+  $("btn-undo").hidden = false;
+  $("hint").textContent = (heard != null ? `Gehört: „${heard || "…"}“ – ` : "") + (ok ? "Prima gelesen!" : "Das üben wir nochmal.");
+  if (ok) cheer(); else if (db.settings.say) speak(w.text);
+}
+
+function undo() {
+  if (!S.last) return;
+  const w = db.words.find((x) => x.id === S.last.id);
+  Object.assign(w, S.last.before);
+  if (!S.last.hadFirst) delete S.first[w.id];
+  S.retries[w.id] = S.last.retries;
+  if (S.queue.length > S.last.qlen) S.queue.splice(S.queue.lastIndexOf(w.id), 1);
+  const wasOk = S.last.ok;
+  S.answered = false; S.last = null;
+  save();
+  judge(!wasOk);
+  $("btn-undo").hidden = true; // nur einmal korrigieren
+}
+
+function next() { S.pos++; if (S.pos >= S.queue.length) finish(); else showWord(); }
+$("btn-yes").addEventListener("click", () => judge(true));
+$("btn-no").addEventListener("click", () => judge(false));
+$("btn-next").addEventListener("click", next);
+$("btn-undo").addEventListener("click", undo);
+$("btn-listen").addEventListener("click", () => speak(cur().text));
+document.addEventListener("keydown", (e) => {
+  if ($("v-practice").hidden) return;
+  if (!S.answered && (e.key === "ArrowRight" || e.key === "j")) judge(true);
+  else if (!S.answered && (e.key === "ArrowLeft" || e.key === "n")) judge(false);
+  else if (S.answered && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); next(); }
+});
+
+function finish() {
+  const ids = Object.keys(S.first);
+  const good = ids.filter((id) => S.first[id]).length;
+  const total = ids.length;
+  const pct = total ? good / total : 0;
+  $("res-emoji").textContent = pct === 1 ? "🏆" : pct >= .7 ? "🎉" : pct >= .4 ? "💪" : "🌱";
+  $("res-title").textContent = pct === 1 ? "Alles richtig!" : pct >= .7 ? "Super gemacht!" : pct >= .4 ? "Gut geübt!" : "Weiter so – Übung macht den Meister!";
+  $("res-sub").textContent = total ? `${good} von ${total} Wörtern beim ersten Mal richtig gelesen.` : "";
+  $("res-list").innerHTML = ids.map((id) => {
+    const w = db.words.find((x) => x.id === id); if (!w) return "";
+    const ok = S.first[id];
+    return `<span class="chip ${ok ? "good" : "bad"}">${ok ? "👍" : "👎"} ${esc(w.text)}</span>`;
+  }).join("");
+  go("result");
+  if (pct >= .7) cheer(true);
+}
+
+// ---------- Ton & Sprache ----------
+let voice = null;
+function pickVoice() {
+  if (!("speechSynthesis" in window)) return;
+  const vs = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("de"));
+  voice = vs.find((v) => /female|anna|petra|helena|katja/i.test(v.name)) || vs[0] || null;
+}
+if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function speak(t) {
+  if (!("speechSynthesis" in window)) return toast("Vorlesen wird hier nicht unterstützt");
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(t);
+  u.lang = "de-DE"; u.rate = .8; if (voice) u.voice = voice;
+  speechSynthesis.speak(u);
+}
+let actx;
+function cheer(big) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const notes = big ? [523, 659, 784, 1047] : [660, 880];
+    notes.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "triangle"; o.frequency.value = f;
+      const t = actx.currentTime + i * .09;
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.18, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .25);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + .3);
+    });
+  } catch (e) {}
+}
+
+// Spracherkennung (Chrome, Edge, Safari)
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+function listen() {
+  if (!SR || S.answered) return;
+  const w = cur();
+  recog = new SR();
+  recog.lang = "de-DE"; recog.interimResults = false; recog.maxAlternatives = 5;
+  let decided = false;
+  const btn = $("btn-mic");
+  btn.classList.add("listening"); btn.textContent = "👂 Ich höre zu …";
+  recog.onresult = (e) => {
+    const alts = [...e.results[0]].map((a) => a.transcript);
+    const target = norm(w.text);
+    const ok = alts.some((t) => norm(t) === target || t.split(/\s+/).some((p) => norm(p) === target));
+    decided = true;
+    judge(ok, alts[0]);
+  };
+  recog.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Mikrofon ist nicht erlaubt – bitte mit 👍/👎 bewerten");
+  };
+  recog.onend = () => {
+    recog = null;
+    btn.classList.remove("listening"); btn.textContent = "🎤 Jetzt vorlesen";
+    if (!decided && !S.answered) $("hint").textContent = "Ich habe nichts verstanden. Nochmal versuchen oder 👍/👎 tippen.";
+  };
+  try { recog.start(); } catch (e) { btn.classList.remove("listening"); }
+}
+$("btn-mic").addEventListener("click", () => { if (recog) recog.stop(); else listen(); });
+
+// ---------- Import ----------
+let found = []; // {text, on, known}
+function renderImport() {
+  $("listnames").innerHTML = listNames().map((n) => `<option value="${esc(n)}">`).join("");
+  renderPick();
+}
+function renderPick() {
+  $("imp-result").hidden = !found.length;
+  $("imp-count").textContent = `(${found.filter((f) => f.on).length} von ${found.length} ausgewählt)`;
+  $("imp-pick").innerHTML = found.map((f, i) => `<button data-i="${i}" class="${f.on ? "on" : ""} ${f.known ? "known" : ""}">${esc(f.text)}</button>`).join("");
+}
+$("imp-pick").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; const f = found[+b.dataset.i]; f.on = !f.on; renderPick(); });
+$("imp-all").addEventListener("click", () => { found.forEach((f) => (f.on = true)); renderPick(); });
+$("imp-none").addEventListener("click", () => { found.forEach((f) => (f.on = false)); renderPick(); });
+
+const drop = $("drop");
+drop.addEventListener("click", () => $("file").click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") $("file").click(); });
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+$("file").addEventListener("change", (e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; });
+
+function status(msg, frac) {
+  $("imp-status").hidden = !msg;
+  $("imp-msg").textContent = msg || "";
+  $("imp-bar").style.width = Math.round((frac || 0) * 100) + "%";
+}
+
+const loaded = {};
+function loadScript(src) {
+  return loaded[src] || (loaded[src] = new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = src; s.onload = res;
+    s.onerror = () => { delete loaded[src]; rej(new Error("Laden fehlgeschlagen – bist du online?")); };
+    document.head.appendChild(s);
+  }));
+}
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const TESS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+
+let ocrWorker = null;
+async function ocr(img, onProg) {
+  await loadScript(TESS);
+  if (!ocrWorker) {
+    status("Texterkennung wird vorbereitet (einmalig, ca. 10 MB) …", .05);
+    ocrWorker = await Tesseract.createWorker("deu", 1, {
+      logger: (m) => { if (m.status === "recognizing text" && onProg.cb) onProg.cb(m.progress); },
+    });
+  }
+  const { data } = await ocrWorker.recognize(img);
+  // nur sicher erkannte Wörter übernehmen
+  const words = (data.words || []).filter((w) => w.confidence >= 55).map((w) => w.text);
+  return words.length ? words.join(" ") : data.text;
+}
+
+async function readFile(file) {
+  try {
+    let text = "";
+    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) text = await readPdf(file);
+    else if (file.type.startsWith("image/")) {
+      const prog = { cb: (p) => status("Ich lese das Bild …", .1 + p * .9) };
+      status("Ich lese das Bild …", .1);
+      text = await ocr(await toCanvas(file), prog);
+    } else throw new Error("Bitte ein PDF oder ein Bild wählen.");
+    const n = addFound(text);
+    status("");
+    toast(n ? `${n} Wörter gefunden 🎉` : "Keine neuen Wörter gefunden");
+    if (!$("listname").value) $("listname").value = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
+  } catch (e) {
+    status("");
+    toast(e.message || "Das hat nicht geklappt");
+    console.error(e);
+  }
+}
+
+// Bild verkleinern / drehen (EXIF) über createImageBitmap
+async function toCanvas(file) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file));
+  const max = 2400, sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  return c;
+}
+
+async function readPdf(file) {
+  status("PDF wird geöffnet …", .05);
+  await loadScript(PDFJS);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pages = Math.min(pdf.numPages, 20);
+  let text = "";
+  for (let i = 1; i <= pages; i++) {
+    const p = await pdf.getPage(i);
+    const tc = await p.getTextContent();
+    text += tc.items.map((it) => it.str + (it.hasEOL ? "\n" : " ")).join("") + "\n";
+    status(`Seite ${i} von ${pages} …`, i / pages);
+  }
+  if (text.replace(/\s/g, "").length > 3) return text;
+  // Gescanntes PDF ohne Textebene: Seiten als Bild erkennen
+  let out = "";
+  const ocrPages = Math.min(pages, 10);
+  for (let i = 1; i <= ocrPages; i++) {
+    const p = await pdf.getPage(i);
+    const vp = p.getViewport({ scale: 2 });
+    const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+    await p.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    const prog = { cb: (x) => status(`Gescannte Seite ${i} von ${ocrPages} wird gelesen …`, (i - 1 + x) / ocrPages) };
+    status(`Gescannte Seite ${i} von ${ocrPages} wird gelesen …`, (i - 1) / ocrPages);
+    out += (await ocr(c, prog)) + "\n";
+  }
+  return out;
+}
+
+function extractWords(text) {
+  // Silbentrennung am Zeilenende zusammenfügen: "Schmet-\nterling"
+  text = text.replace(/(\p{L})[-­]\s*\n\s*(\p{Ll})/gu, "$1$2");
+  const m = text.match(/\p{L}+(?:[-'’]\p{L}+)*/gu) || [];
+  return m.filter((w) => w.length >= 2 && !/^(\p{L})\1+$/u.test(w));
+}
+function addFound(text) {
+  const have = new Set(db.words.map((w) => norm(w.text)));
+  const seen = new Set(found.map((f) => norm(f.text)));
+  let n = 0;
+  for (const t of extractWords(text)) {
+    const k = norm(t);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const known = have.has(k);
+    found.push({ text: t, on: !known, known });
+    n++;
+  }
+  renderPick();
+  return n;
+}
+
+$("imp-save").addEventListener("click", () => {
+  const manual = extractWords($("manual").value);
+  const list = $("listname").value.trim();
+  const have = new Set(db.words.map((w) => norm(w.text)));
+  let added = 0;
+  for (const t of [...found.filter((f) => f.on).map((f) => f.text), ...manual]) {
+    const k = norm(t);
+    if (have.has(k)) continue;
+    have.add(k);
+    db.words.push({ id: uid(), text: t, list, box: 0, due: today(), wv: false, right: 0, wrong: 0, last: null, added: Date.now() });
+    added++;
+  }
+  if (!added) return toast("Keine neuen Wörter ausgewählt");
+  save();
+  found = []; $("manual").value = "";
+  toast(`${added} Wörter übernommen ✅`);
+  go("home");
+});
+
+// ---------- Wortliste ----------
+let wFilter = "all";
+$("w-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  wFilter = b.dataset.f;
+  [...$("w-tabs").children].forEach((x) => x.classList.toggle("on", x === b));
+  renderWords();
+});
+$("w-list").addEventListener("change", renderWords);
+function renderWords() {
+  const sel = $("w-list").value, names = listNames();
+  $("w-list").hidden = names.length < 2;
+  $("w-list").innerHTML = `<option value="">Alle Listen</option>` + names.map((n) => `<option ${n === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
+  const l = $("w-list").value;
+  let ws = db.words.filter((w) => !l || w.list === l);
+  if (wFilter === "wv") ws = ws.filter((w) => w.wv);
+  if (wFilter === "new") ws = ws.filter((w) => !w.right && !w.wrong);
+  if (wFilter === "good") ws = ws.filter((w) => w.box >= 3 && !w.wv);
+  ws.sort((a, b) => (b.wv - a.wv) || a.text.localeCompare(b.text, "de"));
+  $("w-ul").innerHTML = ws.length ? ws.map((w) => {
+    const icon = w.last === "up" ? "👍" : w.last === "down" ? "👎" : "🆕";
+    const stars = w.box ? "⭐".repeat(w.box) + "☆".repeat(MAXBOX - w.box) : "";
+    return `<li><span style="font-size:24px">${icon}</span><span class="w">${esc(w.text)}</span>
+      <span class="s"><span class="stars">${stars}</span><br>👍 ${w.right || 0} · 👎 ${w.wrong || 0}</span>
+      <button class="del" data-del="${w.id}" aria-label="${esc(w.text)} löschen">🗑️</button></li>`;
+  }).join("") : `<li class="empty">Hier ist noch nichts.</li>`;
+}
+$("w-ul").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const w = db.words.find((x) => x.id === b.dataset.del);
+  if (!w || !confirm(`„${w.text}“ löschen?`)) return;
+  db.words = db.words.filter((x) => x !== w); save(); renderWords();
+});
+
+// ---------- Einstellungen ----------
+function renderSettings() {
+  const s = db.settings;
+  $("s-len").value = String(s.len); $("s-upper").checked = s.upper; $("s-say").checked = s.say;
+  $("s-mic").checked = s.mic && !!SR; $("s-mic").disabled = !SR; $("s-theme").value = s.theme || "";
+  if (!SR) $("s-mic-note").textContent = "Dieser Browser unterstützt keine Spracherkennung (z. B. Chrome oder Safari verwenden).";
+}
+$("s-len").addEventListener("change", (e) => { db.settings.len = +e.target.value; save(); });
+$("s-upper").addEventListener("change", (e) => { db.settings.upper = e.target.checked; save(); });
+$("s-say").addEventListener("change", (e) => { db.settings.say = e.target.checked; save(); });
+$("s-mic").addEventListener("change", (e) => { db.settings.mic = e.target.checked; save(); });
+$("s-theme").addEventListener("change", (e) => { db.settings.theme = e.target.value; save(); applyTheme(); });
+$("s-export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `lesefuchs-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$("s-import").addEventListener("click", () => $("s-file").click());
+$("s-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.words)) throw 0;
+    if (!confirm(`Sicherung mit ${d.words.length} Wörtern laden? Die aktuellen Wörter werden ersetzt.`)) return;
+    db.words = d.words; Object.assign(db.settings, d.settings || {}); save(); applyTheme(); renderSettings(); toast("Sicherung geladen ✅");
+  } catch (err) { toast("Das ist keine gültige Sicherung"); }
+});
+$("s-reset").addEventListener("click", () => {
+  if (!confirm("Fortschritt aller Wörter zurücksetzen? Die Wörter bleiben erhalten.")) return;
+  db.words.forEach((w) => Object.assign(w, { box: 0, due: today(), wv: false, right: 0, wrong: 0, last: null, seen: 0 }));
+  save(); toast("Fortschritt zurückgesetzt");
+});
+$("s-clear").addEventListener("click", () => {
+  if (!confirm("Wirklich ALLE Wörter löschen?")) return;
+  db.words = []; save(); toast("Alle Wörter gelöscht");
+});
+
+go("home");
+</script>
+</body>
+</html>
