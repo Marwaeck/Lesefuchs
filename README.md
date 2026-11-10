@@ -22,18 +22,17 @@ Die App läuft als statische Seite auf **Cloudflare Pages**. Gemeinsame Wörter 
 2. **Build → Authentication → Jetzt starten → Anmeldemethode: Google** aktivieren, Support-E-Mail wählen, speichern.
 3. **Build → Firestore Database → Datenbank erstellen**, Standort `europe-west3 (Frankfurt)`, im **Produktionsmodus** starten.
 4. Reiter **Regeln**: den Inhalt von [`firestore.rules`](firestore.rules) hineinkopieren und **Veröffentlichen**.
-   (Alternativ mit der Firebase-CLI: `firebase deploy --only firestore:rules` in diesem Ordner.)
+   (Alternativ mit der Firebase-CLI: `firebase deploy --only firestore:rules`.)
 5. **Projekteinstellungen (Zahnrad) → Allgemein → Deine Apps → Web (`</>`)**, App registrieren (kein Hosting). Die angezeigte `firebaseConfig` in [`firebase-config.js`](firebase-config.js) eintragen (statt `null`) und committen. Die Werte sind nicht geheim, die Daten schützen die Regeln.
 
 ### 2. Cloudflare Pages einrichten
 
-1. Cloudflare-Dashboard → **Workers & Pages → Erstellen → Pages → Mit Git verbinden** → dieses Repository wählen.
+1. Cloudflare-Dashboard → **Workers & Pages → Erstellen → Pages → Mit Git verbinden** → das Repository `Lesefuchs` wählen.
 2. Einstellungen:
-   - **Produktionszweig:** der Branch mit der App (z. B. `main`)
+   - **Produktionszweig:** `main`
    - **Framework-Voreinstellung:** keine
    - **Build-Befehl:** leer lassen
-   - **Build-Ausgabeverzeichnis:** `lesen`
-   - (Root-Verzeichnis: leer lassen; liegt die App in einem eigenen Repo direkt im Hauptordner, als Ausgabeverzeichnis `/` angeben.)
+   - **Build-Ausgabeverzeichnis:** `/` (die App liegt direkt im Hauptordner)
 3. **Speichern und bereitstellen.** Die App ist dann unter `https://<projektname>.pages.dev` erreichbar; jeder Push aktualisiert sie.
 4. Zurück in Firebase: **Authentication → Einstellungen → Autorisierte Domains → Domain hinzufügen** → `<projektname>.pages.dev` (und ggf. eine eigene Domain).
 
@@ -60,4 +59,4 @@ Tipp: Im Browser „Zum Home-Bildschirm“ wählen – dann startet der Lesefuch
 - PDF: [pdf.js](https://mozilla.github.io/pdf.js/) 3.11.174, Texterkennung: [Tesseract.js](https://tesseract.projectnaptha.com/) 5.1.1 mit deutschem Sprachpaket – beide werden erst beim ersten Import aus dem CDN geladen (Internet nötig).
 - Schrift: Andika (für Leseanfänger gestaltet).
 
-Lokal starten: `index.html` im Browser öffnen, oder `python3 -m http.server` im Repo und `http://localhost:8000/lesen/` aufrufen.
+Lokal starten: `python3 -m http.server` im Repo und `http://localhost:8000/` aufrufen (Google-Anmeldung lokal nur, wenn `localhost` in Firebase als Domain freigegeben ist – ist es standardmäßig).
