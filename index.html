@@ -161,6 +161,11 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
 .set input[type=checkbox] { width: 28px; height: 28px; accent-color: var(--accent); }
 .set select { width: auto; }
 
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+.modal .card { max-width: 420px; width: 100%; margin: 0; }
+.modal p { font-size: 20px; margin: 0 0 16px; }
+.modal .row { justify-content: flex-end; }
+.btn.danger { background: var(--bad); color: #fff; }
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
   padding: 12px 20px; border-radius: 16px; z-index: 10; max-width: calc(100% - 32px); text-align: center;
@@ -308,7 +313,7 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
     </div>
     <div class="card">
       <b>Daten</b>
-      <p class="muted" style="font-size:15px">Die Wörter werden nur auf diesem Gerät gespeichert.</p>
+      <p class="muted" style="font-size:15px" id="s-where">Die Wörter werden nur auf diesem Gerät gespeichert.</p>
       <div class="row">
         <button class="btn small" id="s-export">💾 Sicherung speichern</button>
         <button class="btn small" id="s-import">📂 Sicherung laden</button>
@@ -321,6 +326,11 @@ label.field { display: block; margin: 12px 0 4px; font-weight: 700; }
 
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true">
+  <div class="card"><p id="modal-msg"></p>
+    <div class="row"><button class="btn" id="modal-no">Abbrechen</button><button class="btn danger" id="modal-yes">OK</button></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -331,9 +341,54 @@ const MAXBOX = 5;
 let db = { words: [], settings: { len: 10, upper: false, say: true, mic: false, theme: "" } };
 try {
   const raw = localStorage.getItem(KEY);
-  if (raw) { const d = JSON.parse(raw); db.words = d.words || []; Object.assign(db.settings, d.settings || {}); }
+  if (raw) { const d = JSON.parse(raw); db.words = d.words || []; db.updated = d.updated || 0; Object.assign(db.settings, d.settings || {}); }
 } catch (e) { /* privater Modus o. ä. */ }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast("Speichern nicht möglich"); } }
+const W = window.claude && typeof window.claude.use === "function" ? window.claude : null; // läuft als Claude-Artefakt
+let cloud = null, cloudBusy = false, cloudAgain = false, cloudT;
+function save() {
+  db.updated = Date.now();
+  try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ok, Cloud oder nur Sitzung */ }
+  if (cloud) { clearTimeout(cloudT); cloudT = setTimeout(pushCloud, 700); }
+}
+async function pushCloud() {
+  if (cloudBusy) { cloudAgain = true; return; }
+  cloudBusy = true;
+  try { await cloud.set({ json: JSON.stringify(db), updated: db.updated }); }
+  catch (e) { if (e && e.code === "quota_exceeded") toast("Speicher voll – bitte alte Wörter löschen"); }
+  cloudBusy = false;
+  if (cloudAgain) { cloudAgain = false; pushCloud(); }
+}
+async function initCloud() {
+  if (!W) return;
+  try {
+    const [cdb, user] = await Promise.all([W.use("db"), W.use("user")]);
+    if (!cdb || !user) return;
+    const id = await user.id();
+    if (!id) return;
+    const ref = cdb.doc("data/users/" + id + "/lesefuchs");
+    const snap = await Promise.race([ref.get(), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000))]);
+    const remote = snap.exists ? JSON.parse(snap.data().json || "{}") : null;
+    cloud = ref;
+    $("s-where").textContent = "Die Wörter werden in deinem Konto gespeichert und sind auf allen Geräten da, auf denen du diese Seite öffnest.";
+    if (remote && (remote.updated || 0) >= (db.updated || 0)) {
+      db.words = remote.words || []; Object.assign(db.settings, remote.settings || {});
+      db.updated = remote.updated;
+      try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {}
+      applyTheme();
+      if (!$("v-home").hidden) renderHome();
+      else if (!$("v-words").hidden) renderWords();
+    } else if (db.words.length) pushCloud();
+  } catch (e) { console.warn("Konto-Speicher nicht verfügbar", e); }
+}
+
+// Bestätigung im Seitenstil (confirm() ist im Artefakt gesperrt)
+function ask(msg, yes = "OK") {
+  return new Promise((res) => {
+    $("modal-msg").textContent = msg; $("modal-yes").textContent = yes; $("modal").hidden = false; $("modal-yes").focus();
+    const done = (v) => { $("modal").hidden = true; $("modal-yes").onclick = $("modal-no").onclick = null; res(v); };
+    $("modal-yes").onclick = () => done(true); $("modal-no").onclick = () => done(false);
+  });
+}
 
 const today = () => Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000);
 const $ = (id) => document.getElementById(id);
@@ -355,6 +410,7 @@ applyTheme();
 const views = ["home", "practice", "result", "import", "words", "settings"];
 function go(v) {
   if (recog) { try { recog.abort(); } catch (e) {} }
+  if (dictOn) { dictOn = false; dict.stop().catch(() => {}); }
   views.forEach((n) => ($("v-" + n).hidden = n !== v));
   if (v === "home") renderHome();
   if (v === "words") renderWords();
@@ -517,7 +573,12 @@ function pickVoice() {
   voice = vs.find((v) => /female|anna|petra|helena|katja/i.test(v.name)) || vs[0] || null;
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+let tts = null;
 function speak(t) {
+  if (tts) return tts.speak(t, { language: "de", rate: .8 }).catch(() => browserSpeak(t));
+  browserSpeak(t);
+}
+function browserSpeak(t) {
   if (!("speechSynthesis" in window)) return toast("Vorlesen wird hier nicht unterstützt");
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(t);
@@ -540,10 +601,39 @@ function cheer(big) {
 }
 
 // Spracherkennung (Chrome, Edge, Safari)
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recog = null;
+let SR = W ? null : window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, dict = null, dictOn = false, dictHeard = "";
+function checkHeard(alts) {
+  const target = norm(cur().text);
+  return alts.some((t) => norm(t) === target || t.split(/\s+/).some((p) => norm(p) === target));
+}
+function micUI(on) {
+  const btn = $("btn-mic");
+  btn.classList.toggle("listening", on); btn.textContent = on ? "👂 Ich höre zu …" : "🎤 Jetzt vorlesen";
+}
+function setupDictation(d) {
+  dict = d; SR = true; // Mikrofon-Option anbieten
+  d.onFinal(({ text }) => { dictHeard += " " + text; if (dictOn && S && !S.answered && checkHeard([dictHeard])) { dictOn = false; d.stop().catch(() => {}); judge(true, dictHeard.trim()); } });
+  d.onState(({ state, reason }) => {
+    if (state === "listening") return micUI(true);
+    if (state !== "idle") return;
+    micUI(false);
+    const was = dictOn; dictOn = false;
+    if (reason === "not_granted") { toast("Mikrofon ist nicht erlaubt – bitte mit 👍/👎 bewerten"); return; }
+    if (was && S && !S.answered && !$("v-practice").hidden) {
+      if (dictHeard.trim()) judge(checkHeard([dictHeard]), dictHeard.trim());
+      else $("hint").textContent = "Ich habe nichts verstanden. Nochmal versuchen oder 👍/👎 tippen.";
+    }
+  });
+}
 function listen() {
   if (!SR || S.answered) return;
+  if (dict) {
+    dictHeard = ""; dictOn = true;
+    dict.start({ language: "de" }).catch((e) => { dictOn = false; micUI(false); if (e && e.code === "not_granted") toast("Mikrofon ist nicht erlaubt – bitte mit 👍/👎 bewerten"); });
+    setTimeout(() => { if (dictOn) dict.stop().catch(() => {}); }, 6000); // nach 6 s auswerten
+    return;
+  }
   const w = cur();
   recog = new SR();
   recog.lang = "de-DE"; recog.interimResults = false; recog.maxAlternatives = 5;
@@ -567,7 +657,7 @@ function listen() {
   };
   try { recog.start(); } catch (e) { btn.classList.remove("listening"); }
 }
-$("btn-mic").addEventListener("click", () => { if (recog) recog.stop(); else listen(); });
+$("btn-mic").addEventListener("click", () => { if (dictOn) dict.stop().catch(() => {}); else if (recog) recog.stop(); else listen(); });
 
 // ---------- Import ----------
 let found = []; // {text, on, known}
@@ -607,15 +697,19 @@ function loadScript(src) {
   }));
 }
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const TESS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+// Im Artefakt dürfen nur Skripte vom CDN kommen; Worker, Rechenkern und Sprachpaket liegen deshalb neben der Seite (lib/).
+const LIB = W ? new URL("lib/", location.href).href : null;
+const PDFJS_WORKER = LIB ? LIB + "pdf.worker.min.js" : "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const TESS_OPTS = LIB ? { workerPath: LIB + "worker.min.js", corePath: LIB, langPath: LIB, workerBlobURL: false, cacheMethod: "none" } : {};
 
 let ocrWorker = null;
 async function ocr(img, onProg) {
   await loadScript(TESS);
   if (!ocrWorker) {
-    status("Texterkennung wird vorbereitet (einmalig, ca. 10 MB) …", .05);
+    status("Texterkennung wird vorbereitet …", .05);
     ocrWorker = await Tesseract.createWorker("deu", 1, {
+      ...TESS_OPTS,
       logger: (m) => { if (m.status === "recognizing text" && onProg.cb) onProg.cb(m.progress); },
     });
   }
@@ -752,10 +846,10 @@ function renderWords() {
       <button class="del" data-del="${w.id}" aria-label="${esc(w.text)} löschen">🗑️</button></li>`;
   }).join("") : `<li class="empty">Hier ist noch nichts.</li>`;
 }
-$("w-ul").addEventListener("click", (e) => {
+$("w-ul").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-del]"); if (!b) return;
   const w = db.words.find((x) => x.id === b.dataset.del);
-  if (!w || !confirm(`„${w.text}“ löschen?`)) return;
+  if (!w || !(await ask(`„${w.text}“ löschen?`, "Löschen"))) return;
   db.words = db.words.filter((x) => x !== w); save(); renderWords();
 });
 
@@ -771,10 +865,18 @@ $("s-upper").addEventListener("change", (e) => { db.settings.upper = e.target.ch
 $("s-say").addEventListener("change", (e) => { db.settings.say = e.target.checked; save(); });
 $("s-mic").addEventListener("change", (e) => { db.settings.mic = e.target.checked; save(); });
 $("s-theme").addEventListener("change", (e) => { db.settings.theme = e.target.value; save(); applyTheme(); });
-$("s-export").addEventListener("click", () => {
+$("s-export").addEventListener("click", async () => {
+  const name = `lesefuchs-${new Date().toISOString().slice(0, 10)}.json`;
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+  if (W) {
+    const dl = await W.use("downloads");
+    if (!dl) return toast("Speichern einer Datei ist hier nicht möglich");
+    try { await dl.save({ filename: name, data: blob }); toast("Sicherung gespeichert 💾"); }
+    catch (err) { if (err && err.code !== "declined") toast("Sicherung konnte nicht gespeichert werden"); }
+    return;
+  }
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = `lesefuchs-${new Date().toISOString().slice(0, 10)}.json`;
+  a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 $("s-import").addEventListener("click", () => $("s-file").click());
@@ -783,21 +885,26 @@ $("s-file").addEventListener("change", async (e) => {
   try {
     const d = JSON.parse(await f.text());
     if (!Array.isArray(d.words)) throw 0;
-    if (!confirm(`Sicherung mit ${d.words.length} Wörtern laden? Die aktuellen Wörter werden ersetzt.`)) return;
+    if (!(await ask(`Sicherung mit ${d.words.length} Wörtern laden? Die aktuellen Wörter werden ersetzt.`, "Laden"))) return;
     db.words = d.words; Object.assign(db.settings, d.settings || {}); save(); applyTheme(); renderSettings(); toast("Sicherung geladen ✅");
   } catch (err) { toast("Das ist keine gültige Sicherung"); }
 });
-$("s-reset").addEventListener("click", () => {
-  if (!confirm("Fortschritt aller Wörter zurücksetzen? Die Wörter bleiben erhalten.")) return;
+$("s-reset").addEventListener("click", async () => {
+  if (!(await ask("Fortschritt aller Wörter zurücksetzen? Die Wörter bleiben erhalten.", "Zurücksetzen"))) return;
   db.words.forEach((w) => Object.assign(w, { box: 0, due: today(), wv: false, right: 0, wrong: 0, last: null, seen: 0 }));
   save(); toast("Fortschritt zurückgesetzt");
 });
-$("s-clear").addEventListener("click", () => {
-  if (!confirm("Wirklich ALLE Wörter löschen?")) return;
+$("s-clear").addEventListener("click", async () => {
+  if (!(await ask("Wirklich ALLE Wörter löschen?", "Alle löschen"))) return;
   db.words = []; save(); toast("Alle Wörter gelöscht");
 });
 
 go("home");
+initCloud();
+if (W) {
+  W.use("tts").then((t) => { tts = t; });
+  W.use("dictation").then((d) => { if (d) setupDictation(d); });
+}
 </script>
 </body>
 </html>
